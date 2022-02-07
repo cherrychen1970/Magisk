@@ -17,6 +17,7 @@ fastboot erase	Fastboot erase command will erase items from your device. You can
 ADB shell	Allows access to Unix shell to write commands
 ADB reboot bootloader	Boot the device to fastboot or Bootloader mode, use this command.
 ADB reboot recovery	Boots your device to TWRP or stock recovery from the booted OS.
+adb reboot fastboot
 adb pull /file-location-on-device/filename	To ‘pull’ any file from your device and send it over to PC
 ADB shell wm density	This command overrides display density
 adb sideload filename	Allow flashing zip files from a command shell
@@ -27,6 +28,19 @@ adb install -r filename.apk	This adb command will allow you to reinstall or upda
 adb install -s filename.apk	To move the application to SD card (if supported by your device):
 ```
 
-### magisk
+### magisk files
 
 native/out/arm64-v8a
+
+### magisk sqlite
+
+```
+sqlite3 magisk.db .tables
+=> denylist  policies  settings  strings 
+
+sqlite3  magisk.db  '.mode column' '.headers on' 'select * from policies'
+```
+
+uid         package_name       policy      until       logging     notification
+----------  -----------------  ----------  ----------  ----------  ------------
+2000        com.android.shell  2           0           1           1  
