@@ -27,14 +27,10 @@ Some highlight features:
 - [Frequently Asked Questions](https://topjohnwu.github.io/Magisk/faq.html)
 - [Magisk Documentation](https://topjohnwu.github.io/Magisk/)
 - [Magisk Troubleshoot Wiki](https://www.didgeridoohan.com/magisk/HomePage) (by [@Didgeridoohan](https://github.com/Didgeridoohan))
+- https://github.com/shakalaca/MagiskOnEmulator
 
-## Bug Reports
+- https://source.android.com/devices/bootloader/partitions/ramdisk-partitions
 
-**Only bug reports from Canary builds will be accepted.**
-
-For installation issues, upload both boot image and install logs.<br>
-For Magisk issues, upload boot logcat or dmesg.<br>
-For Magisk app crashes, record and upload the logcat when the crash occurs.
 
 ## Building and Development
 
@@ -54,26 +50,11 @@ For each action, use `-h` to access help (e.g. `./build.py all -h`)
 - Optionally, set custom configs with `config.prop`. A sample `config.prop.sample` is provided.
 - To sign APKs and zips with your own private keys, set signing configs in `config.prop`. For more info, check [Google's Documentation](https://developer.android.com/studio/publish/app-signing.html#generate-key).
 
-## Translation Contributions
+## Extract boot.img from device 
+ 
+```
+dd if=/dev/block/bootdevice/by-name/boot of=/sdcard/boot.img
+adb pull /sdcard/boot.img stock_boot.img
+```
 
-Default string resources for the Magisk app and its stub APK are located here:
-
-- `app/src/main/res/values/strings.xml`
-- `stub/src/main/res/values/strings.xml`
-
-Translate each and place them in the respective locations (`[module]/src/main/res/values-[lang]/strings.xml`).
-
-## License
-
-    Magisk, including all git submodules are free software:
-    you can redistribute it and/or modify it under the terms of the
-    GNU General Public License as published by the Free Software Foundation,
-    either version 3 of the License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+dd if=/dev/block/bootdevice/by-name/boot_a of=/sdcard/boot.img

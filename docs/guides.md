@@ -254,6 +254,7 @@ Due to changes in Android 11, the `/sbin` folder is no longer guaranteed to exis
 
 Here is an example of how to setup `overlay.d` with custom `*.rc` script:
 
+
 ```
 ramdisk
 │

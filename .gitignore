@@ -16,3 +16,6 @@ native/out
 /.idea
 /build
 /captures
+.DS_Store
+.project
+.settings
