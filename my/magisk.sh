@@ -10,10 +10,16 @@ extract_boot() {
 
 # use 64
 copy_magisk_files() {
-    CPU=$1
-    for f in $MAGISK/native/out/$CPU/*; do adb -s $ADB_DEVICE push $f $TMP/; done
-    adb -s $ADB_DEVICE push $MAGISK/scripts/boot_patch.sh $TMP/
+    PROCESSOR=$1
+    CPU=$2
+    #for f in $MAGISK/native/out/$CPU/*; do adb -s $ADB_DEVICE push $f $TMP/; done
+    adb -s $ADB_DEVICE push $MAGISK/native/out/$PROCESSOR/bushbox $TMP/
+    adb -s $ADB_DEVICE push $MAGISK/native/out/$PROCESSOR/magisk $TMP/magisk$CPU
+    adb -s $ADB_DEVICE push $MAGISK/native/out/$PROCESSOR/magiskboot $TMP/
+    adb -s $ADB_DEVICE push $MAGISK/native/out/$PROCESSOR/magiskinit $TMP/
+    adb -s $ADB_DEVICE push $MAGISK/scripts/boot_patch1.sh $TMP/boot_patch.sh
     adb -s $ADB_DEVICE push $MAGISK/scripts/util_functions.sh $TMP/
+    adb -s $ADB_DEVICE push $MAGISK/app/build/outputs/apk/release/app-release.apk $TMP/magisk.apk
     #adb -s $ADB_DEVICE shell "chown shell $TMP/*"
 }
 
