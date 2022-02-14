@@ -53,7 +53,7 @@ ifdef B_INIT
 include $(CLEAR_VARS)
 LOCAL_MODULE := magiskinit
 LOCAL_STATIC_LIBRARIES := \
-    libutilx \
+    libutils \
     libsepol \
     libxz
 
@@ -81,7 +81,7 @@ ifdef B_BOOT
 include $(CLEAR_VARS)
 LOCAL_MODULE := magiskboot
 LOCAL_STATIC_LIBRARIES := \
-    libutilx \
+    libutils \
     libmincrypt \
     liblzma \
     liblz4 \
@@ -111,7 +111,7 @@ ifdef B_POLICY
 include $(CLEAR_VARS)
 LOCAL_MODULE := magiskpolicy
 LOCAL_STATIC_LIBRARIES := \
-    libutilx \
+    libutils \
     libsepol
 
 LOCAL_SRC_FILES := \
@@ -133,7 +133,7 @@ ifdef B_PROP
 include $(CLEAR_VARS)
 LOCAL_MODULE := resetprop
 LOCAL_STATIC_LIBRARIES := \
-    libutilx \
+    libutils \
     libnanopb \
     libsystemproperties
 
