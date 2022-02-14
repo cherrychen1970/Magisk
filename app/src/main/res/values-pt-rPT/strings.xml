@@ -9,8 +9,6 @@
     <string name="install">Instalar</string>
 
     <!--Status Fragment-->
-    <string name="safetynet_api_error">Erro na API SafetyNet</string>
-    <string name="safetynet_res_invalid">A resposta é inválida</string>
 
     <!--Install Fragment-->
     <string name="keep_force_encryption">Manter encriptação forçada</string>
@@ -34,13 +32,11 @@
     <string name="app_changelog">Lista de alterações da aplicação</string>
 
     <!--Toasts, Dialogs-->
-    <string name="repo_install_title">Instalar %1$s</string>
-    <string name="repo_install_msg">Deseja instalar%1$s agora?</string>
+    <string name="repo_install_title">Instalar %1$s %2$s(%3$d)</string>
     <string name="download">Transferir</string>
     <string name="reboot">Reiniciar</string>
     <string name="magisk_update_title">Nova atualização do Magisk disponível!</string>
     <string name="release_notes">Notas da atualização</string>
-    <string name="repo_cache_cleared">Cache do repositório apagado</string>
     <string name="manager_download_install">Pressione para transferir e instalar</string>
     <string name="update_channel">Atualizações do Magisk</string>
     <string name="flashing">A instalar</string>

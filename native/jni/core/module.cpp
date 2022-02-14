@@ -22,8 +22,6 @@ using namespace std;
 #define TYPE_CUSTOM  (1 << 5)    /* custom node type overrides all */
 #define TYPE_DIR     (TYPE_INTER|TYPE_TMPFS|TYPE_ROOT)
 
-static vector<string> module_list;
-
 class node_entry;
 class dir_node;
 class inter_node;
@@ -543,17 +541,22 @@ static void inject_magisk_bins(root_node *system) {
         delete bin->extract(init_applet[i]);
 }
 
-#define mount_zygisk(bit) \
-if (access("/system/bin/app_process" #bit, F_OK) == 0) { \
-    string zbin = zygisk_bin + "/app_process" #bit;      \
-    string mbin = MAGISKTMP + "/magisk" #bit;            \
-    int src = xopen(mbin.data(), O_RDONLY);              \
-    int out = xopen(zbin.data(), O_CREAT | O_WRONLY, 0); \
-    xsendfile(out, src, nullptr, INT_MAX);               \
-    close(src);           \
-    close(out);           \
-    clone_attr("/system/bin/app_process" #bit, zbin.data());    \
-    bind_mount(zbin.data(), "/system/bin/app_process" #bit);    \
+vector<module_info> *module_list;
+int app_process_32 = -1;
+int app_process_64 = -1;
+
+#define mount_zygisk(bit)                                                               \
+if (access("/system/bin/app_process" #bit, F_OK) == 0) {                                \
+    app_process_##bit = xopen("/system/bin/app_process" #bit, O_RDONLY | O_CLOEXEC);    \
+    string zbin = zygisk_bin + "/app_process" #bit;                                     \
+    string mbin = MAGISKTMP + "/magisk" #bit;                                           \
+    int src = xopen(mbin.data(), O_RDONLY | O_CLOEXEC);                                 \
+    int out = xopen(zbin.data(), O_CREAT | O_WRONLY | O_CLOEXEC, 0);                    \
+    xsendfile(out, src, nullptr, INT_MAX);                                              \
+    close(src);                                                                         \
+    close(out);                                                                         \
+    clone_attr("/system/bin/app_process" #bit, zbin.data());                            \
+    bind_mount(zbin.data(), "/system/bin/app_process" #bit);                            \
 }
 
 void magic_mount() {
@@ -566,55 +569,55 @@ void magic_mount() {
 
     char buf[4096];
     LOGI("* Loading modules\n");
-    for (const auto &m : module_list) {
-        auto module = m.data();
-        char *b = buf + sprintf(buf, "%s/" MODULEMNT "/%s/", MAGISKTMP.data(), module);
+    if (module_list) {
+        for (const auto &m : *module_list) {
+            const char *module = m.name.data();
+            char *b = buf + sprintf(buf, "%s/" MODULEMNT "/%s/", MAGISKTMP.data(), module);
 
-        // Read props
-        strcpy(b, "system.prop");
-        if (access(buf, F_OK) == 0) {
-            LOGI("%s: loading [system.prop]\n", module);
-            load_prop_file(buf, false);
+            // Read props
+            strcpy(b, "system.prop");
+            if (access(buf, F_OK) == 0) {
+                LOGI("%s: loading [system.prop]\n", module);
+                load_prop_file(buf, false);
+            }
+
+            // Check whether skip mounting
+            strcpy(b, "skip_mount");
+            if (access(buf, F_OK) == 0)
+                continue;
+
+            // Double check whether the system folder exists
+            strcpy(b, "system");
+            if (access(buf, F_OK) != 0)
+                continue;
+
+            LOGI("%s: loading mount files\n", module);
+            b[-1] = '\0';
+            int fd = xopen(buf, O_RDONLY | O_CLOEXEC);
+            system->collect_files(module, fd);
+            close(fd);
         }
-
-        // Check whether skip mounting
-        strcpy(b, "skip_mount");
-        if (access(buf, F_OK) == 0)
-            continue;
-
-        // Double check whether the system folder exists
-        strcpy(b, "system");
-        if (access(buf, F_OK) != 0)
-            continue;
-
-        LOGI("%s: loading mount files\n", module);
-        b[-1] = '\0';
-        int fd = xopen(buf, O_RDONLY | O_CLOEXEC);
-        system->collect_files(module, fd);
-        close(fd);
     }
-
     if (MAGISKTMP != "/sbin") {
         // Need to inject our binaries into /system/bin
         inject_magisk_bins(system);
     }
 
-    if (system->is_empty())
-        return;
-
-    // Handle special read-only partitions
-    for (const char *part : { "/vendor", "/product", "/system_ext" }) {
-        struct stat st;
-        if (lstat(part, &st) == 0 && S_ISDIR(st.st_mode)) {
-            if (auto old = system->extract(part + 1)) {
-                auto new_node = new root_node(old);
-                root->insert(new_node);
+    if (!system->is_empty()) {
+        // Handle special read-only partitions
+        for (const char *part : { "/vendor", "/product", "/system_ext" }) {
+            struct stat st;
+            if (lstat(part, &st) == 0 && S_ISDIR(st.st_mode)) {
+                if (auto old = system->extract(part + 1)) {
+                    auto new_node = new root_node(old);
+                    root->insert(new_node);
+                }
             }
         }
-    }
 
-    root->prepare();
-    root->mount();
+        root->prepare();
+        root->mount();
+    }
 
     // Mount on top of modules to enable zygisk
     if (zygisk_enabled) {
@@ -676,8 +679,8 @@ static void foreach_module(Func fn) {
     }
 }
 
-static void collect_modules() {
-    foreach_module([](int dfd, dirent *entry, int modfd) {
+static void collect_modules(bool open_zygisk) {
+    foreach_module([=](int dfd, dirent *entry, int modfd) {
         if (faccessat(modfd, "remove", F_OK, 0) == 0) {
             LOGI("%s: remove\n", entry->d_name);
             auto uninstaller = MODULEROOT + "/"s + entry->d_name + "/uninstall.sh";
@@ -690,24 +693,76 @@ static void collect_modules() {
         unlinkat(modfd, "update", 0);
         if (faccessat(modfd, "disable", F_OK, 0) == 0)
             return;
-        // Riru and its modules are not compatible with zygisk
-        if (zygisk_enabled && (
-                entry->d_name == "riru-core"sv ||
-                faccessat(modfd, "riru", F_OK, 0) == 0))
-            return;
 
-        module_list.emplace_back(entry->d_name);
+        module_info info;
+        if (zygisk_enabled) {
+            // Riru and its modules are not compatible with zygisk
+            if (entry->d_name == "riru-core"sv || faccessat(modfd, "riru", F_OK, 0) == 0) {
+                LOGI("%s: ignore\n", entry->d_name);
+                return;
+            }
+            if (open_zygisk) {
+#if defined(__arm__)
+                info.z32 = openat(modfd, "zygisk/armeabi-v7a.so", O_RDONLY | O_CLOEXEC);
+#elif defined(__aarch64__)
+                info.z32 = openat(modfd, "zygisk/armeabi-v7a.so", O_RDONLY | O_CLOEXEC);
+                info.z64 = openat(modfd, "zygisk/arm64-v8a.so", O_RDONLY | O_CLOEXEC);
+#elif defined(__i386__)
+                info.z32 = openat(modfd, "zygisk/x86.so", O_RDONLY | O_CLOEXEC);
+#elif defined(__x86_64__)
+                info.z32 = openat(modfd, "zygisk/x86.so", O_RDONLY | O_CLOEXEC);
+                info.z64 = openat(modfd, "zygisk/x86_64.so", O_RDONLY | O_CLOEXEC);
+#else
+#error Unsupported ABI
+#endif
+                unlinkat(modfd, "zygisk/unloaded", 0);
+            }
+        } else {
+            // Ignore zygisk modules when zygisk is not enabled
+            if (faccessat(modfd, "zygisk", F_OK, 0) == 0) {
+                LOGI("%s: ignore\n", entry->d_name);
+                return;
+            }
+        }
+        info.name = entry->d_name;
+        module_list->push_back(info);
     });
+    if (zygisk_enabled) {
+        bool use_memfd = true;
+        auto convert_to_memfd = [&](int fd) -> int {
+            if (fd < 0)
+                return -1;
+            if (use_memfd) {
+                int memfd = syscall(__NR_memfd_create, "jit-cache", MFD_CLOEXEC);
+                if (memfd >= 0) {
+                    xsendfile(memfd, fd, nullptr, INT_MAX);
+                    close(fd);
+                    return memfd;
+                } else {
+                    // memfd_create failed, just use what we had
+                    use_memfd = false;
+                }
+            }
+            return fd;
+        };
+        std::for_each(module_list->begin(), module_list->end(), [&](module_info &info) {
+            info.z32 = convert_to_memfd(info.z32);
+#if defined(__LP64__)
+            info.z64 = convert_to_memfd(info.z64);
+#endif
+        });
+    }
 }
 
 void handle_modules() {
+    default_new(module_list);
     prepare_modules();
-    collect_modules();
+    collect_modules(false);
     exec_module_scripts("post-fs-data");
 
     // Recollect modules (module scripts could remove itself)
-    module_list.clear();
-    collect_modules();
+    module_list->clear();
+    collect_modules(true);
 }
 
 void disable_modules() {
@@ -726,5 +781,8 @@ void remove_modules() {
 }
 
 void exec_module_scripts(const char *stage) {
-    exec_module_scripts(stage, module_list);
+    vector<string_view> module_names;
+    std::transform(module_list->begin(), module_list->end(), std::back_inserter(module_names),
+        [](const module_info &info) -> string_view { return info.name; });
+    exec_module_scripts(stage, module_names);
 }

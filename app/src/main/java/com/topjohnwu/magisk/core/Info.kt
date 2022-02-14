@@ -2,7 +2,7 @@ package com.topjohnwu.magisk.core
 
 import android.os.Build
 import androidx.databinding.ObservableBoolean
-import com.topjohnwu.magisk.DynAPK
+import com.topjohnwu.magisk.StubApk
 import com.topjohnwu.magisk.core.model.UpdateInfo
 import com.topjohnwu.magisk.core.utils.net.NetworkObserver
 import com.topjohnwu.magisk.data.repository.NetworkService
@@ -16,7 +16,7 @@ val isRunningAsStub get() = Info.stub != null
 
 object Info {
 
-    var stub: DynAPK.Data? = null
+    var stub: StubApk.Data? = null
 
     val EMPTY_REMOTE = UpdateInfo()
     var remote = EMPTY_REMOTE
@@ -28,19 +28,20 @@ object Info {
 
     // Device state
     @JvmStatic val env by lazy { loadState() }
-    @JvmStatic var isSAR = false
+    @JvmField var isSAR = false
     var isAB = false
-    val isVirtualAB = getProperty("ro.virtual_ab.enabled", "false") == "true"
     @JvmField val isZygiskEnabled = System.getenv("ZYGISK_ENABLED") == "1"
     @JvmStatic val isFDE get() = crypto == "block"
     @JvmField var ramdisk = false
-    @JvmField var hasGMS = true
-    @JvmField val isPixel = Build.BRAND == "google"
-    @JvmField val isEmulator =
-        getProperty("ro.kernel.qemu", "0") == "1" ||
-        getProperty("ro.boot.qemu", "0") == "1"
+    @JvmField var vbmeta = false
     var crypto = ""
     var noDataExec = false
+
+    @JvmField var hasGMS = true
+    val isSamsung = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+    @JvmField val isEmulator =
+        getProperty("ro.kernel.qemu", "0") == "1" ||
+            getProperty("ro.boot.qemu", "0") == "1"
 
     val isConnected by lazy {
         ObservableBoolean(false).also { field ->
@@ -56,14 +57,14 @@ object Info {
     )
 
     class Env(
-        val magiskVersionString: String = "",
+        val versionString: String = "",
         code: Int = -1
     ) {
-        val magiskVersionCode = when {
+        val versionCode = when {
             code < Const.Version.MIN_VERCODE -> -1
             else -> if (Shell.rootAccess()) code else -1
         }
         val isUnsupported = code > 0 && code < Const.Version.MIN_VERCODE
-        val isActive = magiskVersionCode >= 0
+        val isActive = versionCode >= 0
     }
 }

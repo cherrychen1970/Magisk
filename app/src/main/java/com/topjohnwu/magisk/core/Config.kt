@@ -60,6 +60,7 @@ object Config : PreferenceModel, DBConfig {
         const val THEME_ORDINAL = "theme_ordinal"
         const val BOOT_ID = "boot_id"
         const val ASKED_HOME = "asked_home"
+        const val DOH = "doh"
     }
 
     object Value {
@@ -109,9 +110,10 @@ object Config : PreferenceModel, DBConfig {
         else
             Value.DEFAULT_CHANNEL
 
-    @JvmStatic var keepVerity = false
-    @JvmStatic var keepEnc = false
-    @JvmStatic var recovery = false
+    @JvmField var keepVerity = false
+    @JvmField var keepEnc = false
+    @JvmField var patchVbmeta = false
+    @JvmField var recovery = false
 
     var bootId by preference(Key.BOOT_ID, "")
     var askedHome by preference(Key.ASKED_HOME, false)
@@ -130,6 +132,7 @@ object Config : PreferenceModel, DBConfig {
     var suReAuth by preference(Key.SU_REAUTH, false)
     var suTapjack by preference(Key.SU_TAPJACK, true)
     var checkUpdate by preference(Key.CHECK_UPDATES, true)
+    var doh by preference(Key.DOH, false)
     var showSystemApp by preference(Key.SHOW_SYSTEM_APP, false)
 
     var customChannelUrl by preference(Key.CUSTOM_CHANNEL, "")

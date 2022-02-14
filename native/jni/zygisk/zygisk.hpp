@@ -2,16 +2,33 @@
 
 #include <stdint.h>
 #include <jni.h>
+#include <vector>
 
-#define INJECT_ENV_1 "MAGISK_INJ_1"
-#define INJECT_ENV_2 "MAGISK_INJ_2"
+#define INJECT_ENV_1   "MAGISK_INJ_1"
+#define INJECT_ENV_2   "MAGISK_INJ_2"
+#define MAGISKFD_ENV   "MAGISKFD"
+#define MAGISKTMP_ENV  "MAGISKTMP"
 
 enum : int {
     ZYGISK_SETUP,
-    ZYGISK_GET_APPINFO,
-    ZYGISK_UNMOUNT,
+    ZYGISK_GET_INFO,
     ZYGISK_GET_LOG_PIPE,
+    ZYGISK_CONNECT_COMPANION,
+    ZYGISK_GET_MODDIR,
 };
+
+#if defined(__LP64__)
+#define ZLOGD(...) LOGD("zygisk64: " __VA_ARGS__)
+#define ZLOGE(...) LOGE("zygisk64: " __VA_ARGS__)
+#define ZLOGI(...) LOGI("zygisk64: " __VA_ARGS__)
+#else
+#define ZLOGD(...) LOGD("zygisk32: " __VA_ARGS__)
+#define ZLOGE(...) LOGE("zygisk32: " __VA_ARGS__)
+#define ZLOGI(...) LOGI("zygisk32: " __VA_ARGS__)
+#endif
+
+// Find the memory address + size of the pages matching name + inode
+std::pair<void*, size_t> find_map_range(const char *name, unsigned long inode);
 
 // Unmap all pages matching the name
 void unmap_all(const char *name);
@@ -25,13 +42,8 @@ uintptr_t get_function_off(int pid, uintptr_t addr, char *lib);
 // Get function address, given library name + offset
 uintptr_t get_function_addr(int pid, const char *lib, uintptr_t off);
 
-struct AppInfo {
-    bool is_magisk_app;
-    bool on_denylist;
-};
+extern void *self_handle;
 
-void self_unload();
 void hook_functions();
-bool unhook_functions();
-void remote_get_app_info(int uid, const char *process, AppInfo *info);
+int remote_get_info(int uid, const char *process, uint32_t *flags, std::vector<int> &fds);
 int remote_request_unmount();

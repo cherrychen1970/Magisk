@@ -27,27 +27,23 @@ int fork_no_orphan() {
     int pid = xfork();
     if (pid)
         return pid;
-    prctl(PR_SET_PDEATHSIG, SIGTERM);
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
     if (getppid() == 1)
         exit(1);
     return 0;
 }
 
-constexpr char ALPHANUM[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-static bool seeded = false;
-static std::mt19937 gen;
-static std::uniform_int_distribution<int> dist(0, sizeof(ALPHANUM) - 2);
 int gen_rand_str(char *buf, int len, bool varlen) {
-    if (!seeded) {
+    constexpr char ALPHANUM[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    static std::mt19937 gen([]{
         if (access("/dev/urandom", F_OK) != 0)
             mknod("/dev/urandom", 0600 | S_IFCHR, makedev(1, 9));
         int fd = xopen("/dev/urandom", O_RDONLY | O_CLOEXEC);
         unsigned seed;
         xxread(fd, &seed, sizeof(seed));
-        gen.seed(seed);
-        close(fd);
-        seeded = true;
-    }
+        return seed;
+    }());
+    std::uniform_int_distribution<int> dist(0, sizeof(ALPHANUM) - 2);
     if (varlen) {
         std::uniform_int_distribution<int> len_dist(len / 2, len);
         len = len_dist(gen);
@@ -138,10 +134,10 @@ void set_nice_name(const char *name) {
  * Bionic's atoi runs through strtol().
  * Use our own implementation for faster conversion.
  */
-int parse_int(const char *s) {
+int parse_int(string_view s) {
     int val = 0;
-    char c;
-    while ((c = *(s++))) {
+    for (char c : s) {
+        if (!c) break;
         if (c > '9' || c < '0')
             return -1;
         val = val * 10 + c - '0';

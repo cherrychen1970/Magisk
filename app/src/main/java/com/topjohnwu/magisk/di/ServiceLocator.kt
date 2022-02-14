@@ -2,6 +2,7 @@ package com.topjohnwu.magisk.di
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.text.method.LinkMovementMethod
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStoreOwner
@@ -19,6 +20,8 @@ import com.topjohnwu.magisk.ui.install.InstallViewModel
 import com.topjohnwu.magisk.ui.log.LogViewModel
 import com.topjohnwu.magisk.ui.superuser.SuperuserViewModel
 import com.topjohnwu.magisk.ui.surequest.SuRequestViewModel
+import io.noties.markwon.Markwon
+import io.noties.markwon.utils.NoCopySpannableFactory
 
 val AppContext: Context inline get() = ServiceLocator.context
 
@@ -39,26 +42,25 @@ object ServiceLocator {
     // Networking
     val okhttp by lazy { createOkHttpClient(context) }
     val retrofit by lazy { createRetrofit(okhttp) }
-    val markwon by lazy { createMarkwon(context, okhttp) }
+    val markwon by lazy { createMarkwon(context) }
     val networkService by lazy {
         NetworkService(
             createApiService(retrofit, Const.Url.GITHUB_PAGE_URL),
             createApiService(retrofit, Const.Url.GITHUB_RAW_URL),
-            createApiService(retrofit, Const.Url.JS_DELIVR_URL),
             createApiService(retrofit, Const.Url.GITHUB_API_URL)
         )
     }
 
     object VMFactory : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel?> create(clz: Class<T>): T {
-            return when (clz) {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return when (modelClass) {
                 HomeViewModel::class.java -> HomeViewModel(networkService)
                 LogViewModel::class.java -> LogViewModel(logRepo)
                 SuperuserViewModel::class.java -> SuperuserViewModel(policyDB)
                 InstallViewModel::class.java -> InstallViewModel(networkService)
                 SuRequestViewModel::class.java -> SuRequestViewModel(policyDB, timeoutPrefs)
-                else -> clz.newInstance()
+                else -> modelClass.newInstance()
             } as T
         }
     }
@@ -66,10 +68,20 @@ object ServiceLocator {
 
 inline fun <reified VM : ViewModel> ViewModelStoreOwner.viewModel() =
     lazy(LazyThreadSafetyMode.NONE) {
-        ViewModelProvider(this, ServiceLocator.VMFactory).get(VM::class.java)
+        ViewModelProvider(this, ServiceLocator.VMFactory)[VM::class.java]
     }
 
 private fun createSuLogDatabase(context: Context) =
     Room.databaseBuilder(context, SuLogDatabase::class.java, "sulogs.db")
         .fallbackToDestructiveMigration()
         .build()
+
+private fun createMarkwon(context: Context) =
+    Markwon.builder(context).textSetter { textView, spanned, bufferType, onComplete ->
+        textView.apply {
+            movementMethod = LinkMovementMethod.getInstance()
+            setSpannableFactory(NoCopySpannableFactory.getInstance())
+            setText(spanned, bufferType)
+            onComplete.run()
+        }
+    }.build()

@@ -1,13 +1,15 @@
 // All content of this file is released to the public domain.
 
-// This file is the public API for Zygisk modules, and should always be updated in sync with:
+// This file is the public API for Zygisk modules.
+// DO NOT use this file for developing Zygisk modules as it might contain WIP changes.
+// Always use the following header for development as those are finalized APIs:
 // https://github.com/topjohnwu/zygisk-module-sample/blob/master/module/jni/zygisk.hpp
 
 #pragma once
 
 #include <jni.h>
 
-#define ZYGISK_API_VERSION 1
+#define ZYGISK_API_VERSION 2
 
 /*
 
@@ -28,16 +30,18 @@ class ExampleModule : public zygisk::ModuleBase {
 public:
     void onLoad(zygisk::Api *api, JNIEnv *env) override {
         this->api = api;
+        this->env = env;
     }
     void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
         JNINativeMethod methods[] = {
             { "logger_entry_max_payload_native", "()I", (void*) my_logger_entry_max },
         };
-        api->hookJniNativeMethods("android/util/Log", methods, 1);
+        api->hookJniNativeMethods(env, "android/util/Log", methods, 1);
         *(void **) &orig_logger_entry_max = methods[0].fnPtr;
     }
 private:
     zygisk::Api *api;
+    JNIEnv *env;
 };
 
 REGISTER_ZYGISK_MODULE(ExampleModule)
@@ -58,7 +62,7 @@ public:
     // This function is called when the module is loaded into the target process.
     // A Zygisk API handle will be sent as an argument; call utility functions or interface
     // with Zygisk through this handle.
-    virtual void onLoad(Api *api, JNIEnv *env) {}
+    virtual void onLoad([[maybe_unused]] Api *api, [[maybe_unused]] JNIEnv *env) {}
 
     // This function is called before the app process is specialized.
     // At this point, the process just got forked from zygote, but no app specific specialization
@@ -72,20 +76,20 @@ public:
     // If you need to run some operations as superuser, you can call Api::connectCompanion() to
     // get a socket to do IPC calls with a root companion process.
     // See Api::connectCompanion() for more info.
-    virtual void preAppSpecialize(AppSpecializeArgs *args) {}
+    virtual void preAppSpecialize([[maybe_unused]] AppSpecializeArgs *args) {}
 
     // This function is called after the app process is specialized.
     // At this point, the process has all sandbox restrictions enabled for this application.
     // This means that this function runs as the same privilege of the app's own code.
-    virtual void postAppSpecialize(const AppSpecializeArgs *args) {}
+    virtual void postAppSpecialize([[maybe_unused]] const AppSpecializeArgs *args) {}
 
     // This function is called before the system server process is specialized.
     // See preAppSpecialize(args) for more info.
-    virtual void preServerSpecialize(ServerSpecializeArgs *args) {}
+    virtual void preServerSpecialize([[maybe_unused]] ServerSpecializeArgs *args) {}
 
-    // This function is called after the app process is specialized.
+    // This function is called after the system server process is specialized.
     // At this point, the process runs with the privilege of system_server.
-    virtual void postServerSpecialize(const ServerSpecializeArgs *args) {}
+    virtual void postServerSpecialize([[maybe_unused]] const ServerSpecializeArgs *args) {}
 };
 
 struct AppSpecializeArgs {
@@ -127,6 +131,34 @@ struct api_table;
 template <class T> void entry_impl(api_table *, JNIEnv *);
 }
 
+// These values are used in Api::setOption(Option)
+enum Option : int {
+    // Force Magisk's denylist unmount routines to run on this process.
+    //
+    // Setting this option only makes sense in preAppSpecialize.
+    // The actual unmounting happens during app process specialization.
+    //
+    // Set this option to force all Magisk and modules' files to be unmounted from the
+    // mount namespace of the process, regardless of the denylist enforcement status.
+    FORCE_DENYLIST_UNMOUNT = 0,
+
+    // When this option is set, your module's library will be dlclose-ed after post[XXX]Specialize.
+    // Be aware that after dlclose-ing your module, all of your code will be unmapped from memory.
+    // YOU MUST NOT ENABLE THIS OPTION AFTER HOOKING ANY FUNCTIONS IN THE PROCESS.
+    DLCLOSE_MODULE_LIBRARY = 1,
+};
+
+// Bit masks of the return value of Api::getFlags()
+enum StateFlag : uint32_t {
+    // The user has granted root access to the current process
+    PROCESS_GRANTED_ROOT = (1u << 0),
+
+    // The current process was added on the denylist
+    PROCESS_ON_DENYLIST = (1u << 1),
+};
+
+// All API functions will stop working after post[XXX]Specialize as Zygisk will be unloaded
+// from the specialized process afterwards.
 struct Api {
 
     // Connect to a root companion process and get a Unix domain socket for IPC.
@@ -139,30 +171,31 @@ struct Api {
     // Another good use case for a companion process is that if you want to share some resources
     // across multiple processes, hold the resources in the companion process and pass it over.
     //
-    // When this function is called, in the companion process, a socket pair will be created,
-    // your module's onCompanionRequest(int) callback will receive one socket, and the other
-    // socket will be returned.
+    // The root companion process is ABI aware; that is, when calling this function from a 32-bit
+    // process, you will be connected to a 32-bit companion process, and vice versa for 64-bit.
     //
-    // Returns a file descriptor to a socket that is connected to the socket passed to
-    // your module's onCompanionRequest(int). Returns -1 if the connection attempt failed.
+    // Returns a file descriptor to a socket that is connected to the socket passed to your
+    // module's companion request handler. Returns -1 if the connection attempt failed.
     int connectCompanion();
 
-    // Force Magisk's denylist unmount routines to run on this process.
+    // Get the file descriptor of the root folder of the current module.
     //
-    // This API only works in preAppSpecialize.
+    // This API only works in the pre[XXX]Specialize functions.
+    // Accessing the directory returned is only possible in the pre[XXX]Specialize functions
+    // or in the root companion process (assuming that you sent the fd over the socket).
+    // Both restrictions are due to SELinux and UID.
     //
-    // Processes added to Magisk's denylist will have all Magisk and its modules' files unmounted
-    // from its mount namespace. In addition, all Zygisk code will be unloaded from memory, which
-    // also implies that no Zygisk modules (including yours) are loaded.
-    //
-    // However, if for any reason your module still wants the unmount part of the denylist
-    // operation to be enabled EVEN IF THE PROCESS IS NOT ON THE DENYLIST, call this function.
-    // No code will be unloaded from memory (including your module) because there is no way to
-    // guarantee no crashes will occur.
-    //
-    // The unmounting does not happen immediately after the function is called. It is actually
-    // done during app process specialization.
-    void forceDenylistUnmount();
+    // Returns -1 if errors occurred.
+    int getModuleDir();
+
+    // Set various options for your module.
+    // Please note that this function accepts one single option at a time.
+    // Check zygisk::Option for the full list of options available.
+    void setOption(Option opt);
+
+    // Get information about the current process.
+    // Returns bitwise-or'd zygisk::StateFlag values.
+    uint32_t getFlags();
 
     // Hook JNI native methods for a class
     //
@@ -170,7 +203,7 @@ struct Api {
     // The original function pointer will be saved in each JNINativeMethod's fnPtr.
     // If no matching class, method name, or signature is found, that specific JNINativeMethod.fnPtr
     // will be set to nullptr.
-    void hookJniNativeMethods(const char *className, JNINativeMethod *methods, int numMethods);
+    void hookJniNativeMethods(JNIEnv *env, const char *className, JNINativeMethod *methods, int numMethods);
 
     // For ELFs loaded in memory matching `regex`, replace function `symbol` with `newFunc`.
     // If `oldFunc` is not nullptr, the original function pointer will be saved to `oldFunc`.
@@ -186,7 +219,7 @@ struct Api {
 
 private:
     internal::api_table *impl;
-    friend void internal::entry_impl<class T>(internal::api_table *, JNIEnv *);
+    template <class T> friend void internal::entry_impl(internal::api_table *, JNIEnv *);
 };
 
 // Register a class as a Zygisk module
@@ -220,14 +253,12 @@ struct module_abi {
     long api_version;
     ModuleBase *_this;
 
-    void (*onLoad)(ModuleBase *, Api *, JNIEnv *);
     void (*preAppSpecialize)(ModuleBase *, AppSpecializeArgs *);
     void (*postAppSpecialize)(ModuleBase *, const AppSpecializeArgs *);
     void (*preServerSpecialize)(ModuleBase *, ServerSpecializeArgs *);
     void (*postServerSpecialize)(ModuleBase *, const ServerSpecializeArgs *);
 
     module_abi(ModuleBase *module) : api_version(ZYGISK_API_VERSION), _this(module) {
-        onLoad = [](auto self, auto api, auto env) { self->onLoad(api, env); };
         preAppSpecialize = [](auto self, auto args) { self->preAppSpecialize(args); };
         postAppSpecialize = [](auto self, auto args) { self->postAppSpecialize(args); };
         preServerSpecialize = [](auto self, auto args) { self->preServerSpecialize(args); };
@@ -241,19 +272,21 @@ struct api_table {
     bool (*registerModule)(api_table *, module_abi *);
 
     // Utility functions
-    void (*hookJniNativeMethods)(const char *, JNINativeMethod *, int);
+    void (*hookJniNativeMethods)(JNIEnv *, const char *, JNINativeMethod *, int);
     void (*pltHookRegister)(const char *, const char *, void *, void **);
     void (*pltHookExclude)(const char *, const char *);
     bool (*pltHookCommit)();
 
     // Zygisk functions
     int  (*connectCompanion)(void * /* _this */);
-    void (*forceDenylistUnmount)(void * /* _this */);
+    void (*setOption)(void * /* _this */, Option);
+    int  (*getModuleDir)(void * /* _this */);
+    uint32_t (*getFlags)(void * /* _this */);
 };
 
 template <class T>
 void entry_impl(api_table *table, JNIEnv *env) {
-    auto module = new T();
+    ModuleBase *module = new T();
     if (!table->registerModule(table, new module_abi(module)))
         return;
     auto api = new Api();
@@ -263,23 +296,29 @@ void entry_impl(api_table *table, JNIEnv *env) {
 
 } // namespace internal
 
-int Api::connectCompanion() {
-    return impl->connectCompanion(impl->_this);
+inline int Api::connectCompanion() {
+    return impl->connectCompanion ? impl->connectCompanion(impl->_this) : -1;
 }
-void Api::forceDenylistUnmount() {
-    impl->forceDenylistUnmount(impl->_this);
+inline int Api::getModuleDir() {
+    return impl->getModuleDir ? impl->getModuleDir(impl->_this) : -1;
 }
-void Api::hookJniNativeMethods(const char *className, JNINativeMethod *methods, int numMethods) {
-    impl->hookJniNativeMethods(className, methods, numMethods);
+inline void Api::setOption(Option opt) {
+    if (impl->setOption) impl->setOption(impl->_this, opt);
 }
-void Api::pltHookRegister(const char *regex, const char *symbol, void *newFunc, void **oldFunc) {
-    impl->pltHookRegister(regex, symbol, newFunc, oldFunc);
+inline uint32_t Api::getFlags() {
+    return impl->getFlags ? impl->getFlags(impl->_this) : 0;
 }
-void Api::pltHookExclude(const char *regex, const char *symbol) {
-    impl->pltHookExclude(regex, symbol);
+inline void Api::hookJniNativeMethods(JNIEnv *env, const char *className, JNINativeMethod *methods, int numMethods) {
+    if (impl->hookJniNativeMethods) impl->hookJniNativeMethods(env, className, methods, numMethods);
 }
-bool Api::pltHookCommit() {
-    return impl->pltHookCommit();
+inline void Api::pltHookRegister(const char *regex, const char *symbol, void *newFunc, void **oldFunc) {
+    if (impl->pltHookRegister) impl->pltHookRegister(regex, symbol, newFunc, oldFunc);
+}
+inline void Api::pltHookExclude(const char *regex, const char *symbol) {
+    if (impl->pltHookExclude) impl->pltHookExclude(regex, symbol);
+}
+inline bool Api::pltHookCommit() {
+    return impl->pltHookCommit != nullptr && impl->pltHookCommit();
 }
 
 } // namespace zygisk

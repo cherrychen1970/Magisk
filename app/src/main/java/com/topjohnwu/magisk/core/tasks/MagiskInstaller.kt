@@ -6,8 +6,8 @@ import android.widget.Toast
 import androidx.annotation.WorkerThread
 import androidx.core.os.postDelayed
 import com.topjohnwu.magisk.BuildConfig
-import com.topjohnwu.magisk.DynAPK
 import com.topjohnwu.magisk.R
+import com.topjohnwu.magisk.StubApk
 import com.topjohnwu.magisk.core.*
 import com.topjohnwu.magisk.core.utils.MediaStoreUtils
 import com.topjohnwu.magisk.core.utils.MediaStoreUtils.inputStream
@@ -93,7 +93,7 @@ abstract class MagiskInstallImpl protected constructor(
         try {
             // Extract binaries
             if (isRunningAsStub) {
-                val zf = ZipFile(DynAPK.current(context))
+                val zf = ZipFile(StubApk.current(context))
 
                 // Also extract magisk32 on non 64-bit only 64-bit devices
                 val is32lib = Const.CPU_ABI_32?.let {
@@ -324,11 +324,7 @@ abstract class MagiskInstallImpl protected constructor(
 
         // Fix up binaries
         srcBoot.delete()
-        if (shell.isRoot) {
-            "fix_env $installDir".sh()
-        } else {
-            "cp_readlink $installDir".sh()
-        }
+        "cp_readlink $installDir".sh()
 
         return true
     }
@@ -361,6 +357,7 @@ abstract class MagiskInstallImpl protected constructor(
             "cd $installDir",
             "KEEPFORCEENCRYPT=${Config.keepEnc} " +
             "KEEPVERITY=${Config.keepVerity} " +
+            "PATCHVBMETAFLAG=${Config.patchVbmeta} " +
             "RECOVERYMODE=${Config.recovery} " +
             "sh boot_patch.sh $srcBoot")
 
@@ -391,10 +388,10 @@ abstract class MagiskInstallImpl protected constructor(
 
     private fun flashBoot() = "direct_install $installDir $srcBoot".sh().isSuccess
 
-    private suspend fun postOTA(): Boolean {
+    private fun postOTA(): Boolean {
         try {
             val bootctl = File.createTempFile("bootctl", null, context.cacheDir)
-            service.fetchBootctl().byteStream().writeTo(bootctl)
+            context.assets.open("bootctl").writeTo(bootctl)
             "post_ota $bootctl".sh()
         } catch (e: IOException) {
             console.add("! Unable to download bootctl")
@@ -422,7 +419,7 @@ abstract class MagiskInstallImpl protected constructor(
 
     protected fun fixEnv() = extractFiles() && "fix_env $installDir".sh().isSuccess
 
-    protected fun uninstall() = "run_uninstaller ${AssetHack.apk}".sh().isSuccess
+    protected fun uninstall() = "run_uninstaller $AppApkPath".sh().isSuccess
 
     @WorkerThread
     protected abstract suspend fun operations(): Boolean

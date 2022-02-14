@@ -9,7 +9,7 @@ using namespace std;
 
 [[noreturn]] static void usage() {
     fprintf(stderr,
-R"EOF("DenyList Config CLI
+R"EOF(DenyList Config CLI
 
 Usage: magisk --denylist [action [arguments...] ]
 Actions:
@@ -21,11 +21,12 @@ Actions:
    ls              Print the current denylist
    exec CMDs...    Execute commands in isolated mount
                    namespace and do all unmounts
+
 )EOF");
     exit(1);
 }
 
-void denylist_handler(int client, ucred *cred) {
+void denylist_handler(int client, const sock_cred *cred) {
     if (client < 0) {
         revert_unmount();
         return;
@@ -33,17 +34,6 @@ void denylist_handler(int client, ucred *cred) {
 
     int req = read_int(client);
     int res = DAEMON_ERROR;
-
-    switch (req) {
-    case ADD_LIST:
-    case RM_LIST:
-    case LS_LIST:
-        if (!denylist_enabled) {
-            write_int(client, DENY_NOT_ENFORCED);
-            close(client);
-            return;
-        }
-    }
 
     switch (req) {
     case ENFORCE_DENY:
@@ -62,7 +52,7 @@ void denylist_handler(int client, ucred *cred) {
         ls_list(client);
         return;
     case DENY_STATUS:
-        res = (zygisk_enabled && denylist_enabled) ? DENY_IS_ENFORCED : DENY_NOT_ENFORCED;
+        res = (zygisk_enabled && denylist_enforced) ? DENY_IS_ENFORCED : DENY_NOT_ENFORCED;
         break;
     }
 

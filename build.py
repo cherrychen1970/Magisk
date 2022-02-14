@@ -330,6 +330,12 @@ def build_binary(args):
     if 'test' in args.target:
         flag += ' B_TEST=1'
 
+    if flag:
+        run_ndk_build(flag + ' B_SHARED=1')
+
+    if 'magisk' in args.target:
+        clean_elf()
+
     if 'magiskinit' in args.target:
         dump_bin_header()
         flag += ' B_INIT=1'
@@ -345,9 +351,6 @@ def build_binary(args):
 
     if flag:
         run_ndk_build(flag)
-
-    if 'magisk' in args.target:
-        clean_elf()
 
     if 'busybox' in args.target:
         run_ndk_build('B_BB=1')
@@ -380,24 +383,6 @@ def build_stub(args):
     build_apk(args, 'stub')
 
 
-def build_snet(args):
-    if not op.exists(op.join('stub', 'src', 'main', 'java', 'com', 'topjohnwu', 'snet')):
-        error('snet sources have to be bind mounted on top of the stub folder')
-    header('* Building snet extension')
-    proc = execv([gradlew, 'stub:assembleRelease'])
-    if proc.returncode != 0:
-        error('Build snet extention failed!')
-    source = op.join('stub', 'build', 'outputs', 'apk',
-                     'release', 'stub-release.apk')
-    target = op.join(config['outdir'], 'snet.jar')
-    # Extract classes.dex
-    with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=False) as zout:
-        with zipfile.ZipFile(source) as zin:
-            zout.writestr('classes.dex', zin.read('classes.dex'))
-    rm(source)
-    header('Output: ' + target)
-
-
 def cleanup(args):
     support_targets = {'native', 'java'}
     if args.target:
@@ -420,7 +405,7 @@ def cleanup(args):
 def setup_ndk(args):
     os_name = platform.system().lower()
     ndk_ver = config['ndkVersion']
-    url = f'https://dl.google.com/android/repository/android-ndk-r{ndk_ver}-{os_name}-x86_64.zip'
+    url = f'https://dl.google.com/android/repository/android-ndk-r{ndk_ver}-{os_name}.zip'
     ndk_zip = url.split('/')[-1]
 
     header(f'* Downloading {ndk_zip}')
@@ -432,7 +417,7 @@ def setup_ndk(args):
     with zipfile.ZipFile(ndk_zip, 'r') as zf:
         for info in zf.infolist():
             vprint(f'Extracting {info.filename}')
-            if info.external_attr == 2716663808:  # symlink
+            if info.external_attr >> 28 == 0xA:  # symlink
                 src = zf.read(info).decode("utf-8")
                 dest = op.join(ndk_root, info.filename)
                 os.symlink(src, dest)
@@ -445,36 +430,78 @@ def setup_ndk(args):
     mv(op.join(ndk_root, f'android-ndk-r{ndk_ver}'), ndk_path)
 
     header('* Patching static libs')
-    for api in ['16', '21']:
-        for target in ['aarch64-linux-android', 'arm-linux-androideabi',
-                       'i686-linux-android', 'x86_64-linux-android']:
-            arch = target.split('-')[0]
-            lib_dir = op.join(
-                ndk_path, 'toolchains', 'llvm', 'prebuilt', f'{os_name}-x86_64',
-                'sysroot', 'usr', 'lib', f'{target}', api)
-            if not op.exists(lib_dir):
-                continue
-            src_dir = op.join('tools', 'ndk-bins', api, arch)
-            rm(op.join(src_dir, '.DS_Store'))
-            for path in copy_tree(src_dir, lib_dir):
-                vprint(f'Replaced {path}')
+    for target in ['aarch64-linux-android', 'arm-linux-androideabi',
+                   'i686-linux-android', 'x86_64-linux-android']:
+        arch = target.split('-')[0]
+        lib_dir = op.join(
+            ndk_path, 'toolchains', 'llvm', 'prebuilt', f'{os_name}-x86_64',
+            'sysroot', 'usr', 'lib', f'{target}', '21')
+        if not op.exists(lib_dir):
+            continue
+        src_dir = op.join('tools', 'ndk-bins', '21', arch)
+        rm(op.join(src_dir, '.DS_Store'))
+        for path in copy_tree(src_dir, lib_dir):
+            vprint(f'Replaced {path}')
 
 
 def setup_avd(args):
-    build_binary(args)
-    build_app(args)
+    if not args.skip:
+        build_binary(args)
+        build_app(args)
 
     header('* Setting up emulator')
 
     abi = cmd_out([adb_path, 'shell', 'getprop', 'ro.product.cpu.abi'])
     proc = execv([adb_path, 'push', f'native/out/{abi}/busybox', 'out/app-debug.apk',
-           'scripts/emulator.sh', '/data/local/tmp'])
+           'scripts/avd_magisk.sh', '/data/local/tmp'])
     if proc.returncode != 0:
         error('adb push failed!')
 
-    proc = execv([adb_path, 'shell', 'sh', '/data/local/tmp/emulator.sh'])
+    proc = execv([adb_path, 'shell', 'sh', '/data/local/tmp/avd_magisk.sh'])
     if proc.returncode != 0:
-        error('emulator.sh failed!')
+        error('avd_magisk.sh failed!')
+
+
+def patch_avd_ramdisk(args):
+    if not args.skip:
+        build_binary(args)
+        build_app(args)
+
+    header('* Patching emulator ramdisk.img')
+
+    # Create a backup to prevent accidental overwrites
+    backup = args.ramdisk + '.bak'
+    if not op.exists(backup):
+        cp(args.ramdisk, backup)
+
+    ini = op.join(op.dirname(args.ramdisk), 'advancedFeatures.ini')
+    with open(ini, 'r') as f:
+        adv_ft = f.read()
+
+    # Need to turn off system as root
+    if 'SystemAsRoot = on' in adv_ft:
+        # Create a backup
+        cp(ini, ini + '.bak')
+        adv_ft = adv_ft.replace('SystemAsRoot = on', 'SystemAsRoot = off')
+        with open(ini, 'w') as f:
+            f.write(adv_ft)
+
+    abi = cmd_out([adb_path, 'shell', 'getprop', 'ro.product.cpu.abi'])
+    proc = execv([adb_path, 'push', f'native/out/{abi}/busybox', 'out/app-debug.apk',
+           'scripts/avd_patch.sh', '/data/local/tmp'])
+    if proc.returncode != 0:
+        error('adb push failed!')
+    proc = execv([adb_path, 'push', backup, '/data/local/tmp/ramdisk.cpio.tmp'])
+    if proc.returncode != 0:
+        error('adb push failed!')
+
+    proc = execv([adb_path, 'shell', 'sh', '/data/local/tmp/avd_patch.sh'])
+    if proc.returncode != 0:
+        error('avd_patch.sh failed!')
+
+    proc = execv([adb_path, 'pull', '/data/local/tmp/ramdisk.cpio.gz', args.ramdisk])
+    if proc.returncode != 0:
+        error('adb pull failed!')
 
 
 def build_all(args):
@@ -510,13 +537,17 @@ stub_parser = subparsers.add_parser('stub', help='build the stub app')
 stub_parser.set_defaults(func=build_stub)
 
 avd_parser = subparsers.add_parser(
-    'emulator', help='build and setup AVD for development')
+    'emulator', help='setup AVD for development')
+avd_parser.add_argument('-s', '--skip', action='store_true',
+    help='skip building binaries and the app')
 avd_parser.set_defaults(func=setup_avd)
 
-# Need to bind mount snet sources on top of stub folder
-# Note: source code for the snet extension is *NOT* public
-snet_parser = subparsers.add_parser('snet', help='build snet extension')
-snet_parser.set_defaults(func=build_snet)
+avd_patch_parser = subparsers.add_parser(
+    'avd_patch', help='patch AVD ramdisk.img')
+avd_patch_parser.add_argument('ramdisk', help='path to ramdisk.img')
+avd_patch_parser.add_argument('-s', '--skip', action='store_true',
+    help='skip building binaries and the app')
+avd_patch_parser.set_defaults(func=patch_avd_ramdisk)
 
 clean_parser = subparsers.add_parser('clean', help='cleanup')
 clean_parser.add_argument(

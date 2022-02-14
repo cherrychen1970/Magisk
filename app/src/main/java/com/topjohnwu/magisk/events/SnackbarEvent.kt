@@ -4,7 +4,7 @@ import android.view.View
 import androidx.annotation.StringRes
 import com.google.android.material.snackbar.Snackbar
 import com.topjohnwu.magisk.arch.ActivityExecutor
-import com.topjohnwu.magisk.arch.BaseUIActivity
+import com.topjohnwu.magisk.arch.UIActivity
 import com.topjohnwu.magisk.arch.ViewEvent
 import com.topjohnwu.magisk.utils.TextHolder
 import com.topjohnwu.magisk.utils.asText
@@ -30,13 +30,14 @@ class SnackbarEvent constructor(
 
     private fun snackbar(
         view: View,
+        anchor: View?,
         message: String,
         length: Int,
         builder: Snackbar.() -> Unit
-    ) = Snackbar.make(view, message, length).apply(builder).show()
+    ) = Snackbar.make(view, message, length).setAnchorView(anchor).apply(builder).show()
 
-    override fun invoke(activity: BaseUIActivity<*, *>) {
-        snackbar(activity.snackbarView,
+    override fun invoke(activity: UIActivity<*>) {
+        snackbar(activity.snackbarView, activity.snackbarAnchorView,
             msg.getText(activity.resources).toString(),
             length, builder)
     }

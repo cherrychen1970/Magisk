@@ -46,6 +46,9 @@ void register_poll(const pollfd *pfd, poll_callback callback) {
 }
 
 void unregister_poll(int fd, bool auto_close) {
+    if (fd < 0)
+        return;
+
     if (gettid() == getpid()) {
         // On main thread, directly modify
         poll_map->erase(fd);
@@ -66,6 +69,18 @@ void unregister_poll(int fd, bool auto_close) {
         write_int(poll_ctrl, fd);
         write_int(poll_ctrl, auto_close);
     }
+}
+
+void clear_poll() {
+    if (poll_fds) {
+        for (auto &poll_fd : *poll_fds) {
+            close(poll_fd.fd);
+        }
+    }
+    delete poll_fds;
+    delete poll_map;
+    poll_fds = nullptr;
+    poll_map = nullptr;
 }
 
 static void poll_ctrl_handler(pollfd *pfd) {
@@ -118,26 +133,7 @@ static void poll_ctrl_handler(pollfd *pfd) {
     }
 }
 
-static bool verify_client(pid_t pid) {
-    // Verify caller is the same as server
-    char path[32];
-    sprintf(path, "/proc/%d/exe", pid);
-    struct stat st;
-    return !(stat(path, &st) || st.st_dev != self_st.st_dev || st.st_ino != self_st.st_ino);
-}
-
-static bool check_zygote(pid_t pid) {
-    char buf[32];
-    sprintf(buf, "/proc/%d/attr/current", pid);
-    if (auto fp = open_file(buf, "r")) {
-        fscanf(fp.get(), "%s", buf);
-        return buf == "u:r:zygote:s0"sv;
-    } else {
-        return false;
-    }
-}
-
-static void handle_request_async(int client, int code, ucred cred) {
+static void handle_request_async(int client, int code, const sock_cred &cred) {
     switch (code) {
     case DENYLIST:
         denylist_handler(client, &cred);
@@ -164,6 +160,7 @@ static void handle_request_async(int client, int code, ucred cred) {
         reboot();
         break;
     case ZYGISK_REQUEST:
+    case ZYGISK_PASSTHROUGH:
         zygisk_handler(client, &cred);
         break;
     default:
@@ -194,19 +191,29 @@ static void handle_request_sync(int client, int code) {
     }
 }
 
+static bool is_client(pid_t pid) {
+    // Verify caller is the same as server
+    char path[32];
+    sprintf(path, "/proc/%d/exe", pid);
+    struct stat st;
+    return !(stat(path, &st) || st.st_dev != self_st.st_dev || st.st_ino != self_st.st_ino);
+}
+
 static void handle_request(pollfd *pfd) {
     int client = xaccept4(pfd->fd, nullptr, nullptr, SOCK_CLOEXEC);
 
     // Verify client credentials
-    ucred cred;
-    get_client_cred(client, &cred);
-
-    bool is_root = cred.uid == UID_ROOT;
-    bool is_client = verify_client(cred.pid);
-    bool is_zygote = !is_client && check_zygote(cred.pid);
+    sock_cred cred;
+    bool is_root;
+    bool is_zygote;
     int code;
 
-    if (!is_root && !is_zygote && !is_client)
+    if (!get_client_cred(client, &cred))
+        goto done;
+    is_root = cred.uid == UID_ROOT;
+    is_zygote = cred.context == "u:r:zygote:s0";
+
+    if (!is_root && !is_zygote && !is_client(cred.pid))
         goto done;
 
     code = read_int(client);
@@ -254,19 +261,20 @@ done:
     close(client);
 }
 
-static int switch_cgroup(const char *cgroup, int pid) {
+static void switch_cgroup(const char *cgroup, int pid) {
     char buf[32];
     snprintf(buf, sizeof(buf), "%s/cgroup.procs", cgroup);
-    int fd = open(buf, O_WRONLY | O_APPEND | O_CLOEXEC);
+    if (access(buf, F_OK) != 0)
+        return;
+    int fd = xopen(buf, O_WRONLY | O_APPEND | O_CLOEXEC);
     if (fd == -1)
-        return -1;
+        return;
     snprintf(buf, sizeof(buf), "%d\n", pid);
     if (xwrite(fd, buf, strlen(buf)) == -1) {
         close(fd);
-        return -1;
+        return;
     }
     close(fd);
-    return 0;
 }
 
 static void daemon_entry() {
@@ -299,8 +307,10 @@ static void daemon_entry() {
 
     // Escape from cgroup
     int pid = getpid();
-    if (switch_cgroup("/acct", pid) && switch_cgroup("/sys/fs/cgroup", pid))
-        LOGW("Can't switch cgroup\n");
+    switch_cgroup("/acct", pid);
+    switch_cgroup("/dev/memcg/apps", pid);
+    switch_cgroup("/dev/cg2_bpf", pid);
+    switch_cgroup("/sys/fs/cgroup", pid);
 
     // Get self stat
     char buf[64];

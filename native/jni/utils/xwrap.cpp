@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <sys/sendfile.h>
 #include <sys/ptrace.h>
+#include <sys/inotify.h>
 
 #include <utils.hpp>
 
@@ -198,26 +199,9 @@ int xlisten(int sockfd, int backlog) {
     return ret;
 }
 
-static int accept4_compat(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
-    int fd = accept(sockfd, addr, addrlen);
-    if (fd < 0) {
-        PLOGE("accept");
-    } else {
-        if (flags & SOCK_CLOEXEC)
-            fcntl(fd, F_SETFD, FD_CLOEXEC);
-        if (flags & SOCK_NONBLOCK) {
-            int i = fcntl(fd, F_GETFL);
-            fcntl(fd, F_SETFL, i | O_NONBLOCK);
-        }
-    }
-    return fd;
-}
-
 int xaccept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
     int fd = accept4(sockfd, addr, addrlen, flags);
     if (fd < 0) {
-        if (errno == ENOSYS)
-            return accept4_compat(sockfd, addr, addrlen, flags);
         PLOGE("accept4");
     }
     return fd;
@@ -300,6 +284,14 @@ int xfstat(int fd, struct stat *buf) {
     int ret = fstat(fd, buf);
     if (ret < 0) {
         PLOGE("fstat %d", fd);
+    }
+    return ret;
+}
+
+int xfstatat(int dirfd, const char *pathname, struct stat *buf, int flags) {
+    int ret = fstatat(dirfd, pathname, buf, flags);
+    if (ret < 0) {
+        PLOGE("fstatat %s", pathname);
     }
     return ret;
 }
@@ -460,6 +452,7 @@ void *xmmap(void *addr, size_t length, int prot, int flags,
     void *ret = mmap(addr, length, prot, flags, fd, offset);
     if (ret == MAP_FAILED) {
         PLOGE("mmap");
+        return nullptr;
     }
     return ret;
 }

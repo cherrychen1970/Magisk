@@ -8,7 +8,12 @@ ifdef B_MAGISK
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := magisk
-LOCAL_STATIC_LIBRARIES := libnanopb libsystemproperties libutils libphmap libxhook
+LOCAL_STATIC_LIBRARIES := \
+    libutils \
+    libnanopb \
+    libsystemproperties \
+    libphmap \
+    libxhook
 
 LOCAL_SRC_FILES := \
     core/applets.cpp \
@@ -22,13 +27,14 @@ LOCAL_SRC_FILES := \
     core/module.cpp \
     core/logging.cpp \
     core/thread.cpp \
-    resetprop/persist_properties.cpp \
+    resetprop/persist.cpp \
     resetprop/resetprop.cpp \
     su/su.cpp \
     su/connect.cpp \
     su/pts.cpp \
     su/su_daemon.cpp \
     zygisk/entry.cpp \
+    zygisk/main.cpp \
     zygisk/utils.cpp \
     zygisk/hook.cpp \
     zygisk/memory.cpp \
@@ -42,12 +48,14 @@ include $(BUILD_EXECUTABLE)
 
 endif
 
-include $(CLEAR_VARS)
-
 ifdef B_INIT
 
+include $(CLEAR_VARS)
 LOCAL_MODULE := magiskinit
-LOCAL_STATIC_LIBRARIES := libsepol libxz libutils
+LOCAL_STATIC_LIBRARIES := \
+    libutilx \
+    libsepol \
+    libxz
 
 LOCAL_SRC_FILES := \
     init/init.cpp \
@@ -55,7 +63,6 @@ LOCAL_SRC_FILES := \
     init/rootdir.cpp \
     init/getinfo.cpp \
     init/twostage.cpp \
-    init/raw_data.cpp \
     core/socket.cpp \
     magiskpolicy/sepolicy.cpp \
     magiskpolicy/magiskpolicy.cpp \
@@ -73,7 +80,15 @@ ifdef B_BOOT
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := magiskboot
-LOCAL_STATIC_LIBRARIES := libmincrypt liblzma liblz4 libbz2 libfdt libutils libz libzopfli
+LOCAL_STATIC_LIBRARIES := \
+    libutilx \
+    libmincrypt \
+    liblzma \
+    liblz4 \
+    libbz2 \
+    libfdt \
+    libz \
+    libzopfli
 
 LOCAL_SRC_FILES := \
     magiskboot/main.cpp \
@@ -95,7 +110,9 @@ ifdef B_POLICY
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := magiskpolicy
-LOCAL_STATIC_LIBRARIES := libsepol libutils
+LOCAL_STATIC_LIBRARIES := \
+    libutilx \
+    libsepol
 
 LOCAL_SRC_FILES := \
     core/applet_stub.cpp \
@@ -115,7 +132,10 @@ ifdef B_PROP
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := resetprop
-LOCAL_STATIC_LIBRARIES := libnanopb libsystemproperties libutils
+LOCAL_STATIC_LIBRARIES := \
+    libutilx \
+    libnanopb \
+    libsystemproperties
 
 LOCAL_SRC_FILES := \
     core/applet_stub.cpp \
@@ -133,7 +153,10 @@ ifneq (,$(wildcard jni/test.cpp))
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := test
-LOCAL_STATIC_LIBRARIES := libutils libphmap
+LOCAL_STATIC_LIBRARIES := \
+    libutils \
+    libphmap
+
 LOCAL_SRC_FILES := test.cpp
 include $(BUILD_EXECUTABLE)
 
