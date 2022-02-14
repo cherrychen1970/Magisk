@@ -4,7 +4,7 @@ AVD=pixel4
 DEVICE=../devices/emulator/pixel4
 ADB_DEVICE=emulator-5554
 TMP_DIR=/data/local/tmp
-PROCESSOR=x86_64
+ARCH=x86_64
 CPU=64
 
 RAMDISK=$DEVICE/ramdisk.img
@@ -38,7 +38,7 @@ pause(){
 #emulator -avd $AVD
 adb -e push ./target.sh $TMP_DIR/target.sh
 extract_boot $RAMDISK $STOCK_BOOT
-copy_magisk_files  $PROCESSOR $CPU
+copy_magisk_files  $ARCH $CPU
 boot_patch $STOCK_BOOT $MAGISK_BOOT
 repack_ramdisk $MAGISK_BOOT $MAGISK_RAMDISK
 pause "Close emulator and press any key to continue ....."
