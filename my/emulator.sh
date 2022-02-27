@@ -35,12 +35,22 @@ pause(){
     read -s -n 1 -p "$1"
 }
 
-#emulator -avd $AVD
-adb -e push ./target.sh $TMP_DIR/target.sh
-extract_boot $RAMDISK $STOCK_BOOT
-copy_magisk_files  $ARCH $CPU
-boot_patch $STOCK_BOOT $MAGISK_BOOT
-repack_ramdisk $MAGISK_BOOT $MAGISK_RAMDISK
-pause "Close emulator and press any key to continue ....."
-emulator -avd $AVD -ramdisk $MAGISK_RAMDISK -no-snapshot
+install() {
+    #emulator -avd $AVD
+    adb -e push ./target.sh $TMP_DIR/target.sh
+    extract_boot $RAMDISK $STOCK_BOOT
+    copy_magisk_files  $ARCH $CPU
+    boot_patch $STOCK_BOOT $MAGISK_BOOT
+    repack_ramdisk $MAGISK_BOOT $MAGISK_RAMDISK
+    pause "Close emulator and press any key to continue ....."
+    emulator -avd $AVD -ramdisk $MAGISK_RAMDISK -no-snapshot
+}
 
+repack() {
+    repack_ramdisk $MAGISK_BOOT $MAGISK_RAMDISK
+}
+run() {
+    emulator -avd $AVD -ramdisk $MAGISK_RAMDISK -no-snapshot
+}
+
+$1

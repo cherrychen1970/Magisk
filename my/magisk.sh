@@ -17,7 +17,7 @@ copy_magisk_files() {
     adb -s $ADB_DEVICE push $MAGISK/native/out/$ARCH/magisk $TMP/magisk$CPU
     adb -s $ADB_DEVICE push $MAGISK/native/out/$ARCH/magiskboot $TMP/
     adb -s $ADB_DEVICE push $MAGISK/native/out/$ARCH/magiskinit $TMP/
-    adb -s $ADB_DEVICE push $MAGISK/scripts/boot_patch1.sh $TMP/boot_patch.sh
+    adb -s $ADB_DEVICE push $MAGISK/scripts/boot_patch.sh $TMP/boot_patch.sh
     adb -s $ADB_DEVICE push $MAGISK/scripts/util_functions.sh $TMP/
     adb -s $ADB_DEVICE push $MAGISK/app/build/outputs/apk/release/app-release.apk $TMP/magisk.apk
     #adb -s $ADB_DEVICE shell "chown shell $TMP/*"
